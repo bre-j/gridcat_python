@@ -1,64 +1,65 @@
 import io
 import os
-import glob
-import warnings
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import nibabel as nib
 import nilearn.plotting as plotting
-import pycircstat
 
 from scipy.stats import circmean, circstd, pearsonr
-from scipy.linalg import block_diag
 
-from nilearn.glm.first_level import FirstLevelModel
-from nilearn.image import concat_imgs, load_img, new_img_like, mean_img, smooth_img, math_img
-from nilearn.plotting import plot_design_matrix, plot_img
+from nilearn.image import new_img_like
 from nilearn.masking import apply_mask
 
 
-
 class Comp:
+    """Comparison and plotting helpers for Python vs Matlab/GridCAT outputs."""
+
     def __init__(self):
+        """Create a stateless comparison helper."""
         pass
 
     def compare_masks(self, base_path):
         """
-        quick comparison of masks"""
+        Compare the generated Python mask with the Matlab/GridCAT mask.
+        Prints a simple voxelwise correlation as a sanity check.
+        """
         matlab_mask = nib.load(f"{base_path}Matlab_GridCat_Output/GLM1/mask.nii")
         python_mask = nib.load(f"{base_path}python_gridcat_mask_py.nii.gz")
 
         pm = np.array(python_mask.dataobj)
         mm = np.array(matlab_mask.dataobj)
         print("-- Sanity Check --")
-        print(f"Correlation between the created Python and the Matlab Mask {np.corrcoef(mm.flatten(), pm.flatten())[0,1]:.2f}")
+        print(
+            "Correlation between the created Python and the Matlab Mask "
+            f"{np.corrcoef(mm.flatten(), pm.flatten())[0,1]:.2f}"
+        )
 
     def get_roi_slices(self, roi_mask_path_or_list, method='range', n_slices_around=1):
         """
-        Determines which slices to plot based on an ROI mask.
+        Determine useful z-slices for plotting based on one or more ROI masks.
         """
 
         if isinstance(roi_mask_path_or_list, str):
-            paths = [roi_mask_path_or_list] 
+            paths = [roi_mask_path_or_list]
         elif isinstance(roi_mask_path_or_list, list):
             paths = roi_mask_path_or_list
         else:
             raise TypeError("not str or list provided")
 
         combined_mask_data = None
-        
+
         for i, path in enumerate(paths):
 
             mask_img = nib.load(path)
-            
+
             if i == 0:
                 combined_mask_data = np.zeros(mask_img.shape, dtype=bool)
 
             combined_mask_data |= mask_img.get_fdata().astype(bool)
 
-            
+
         _, _, z_indices = np.where(combined_mask_data)
 
 
@@ -76,10 +77,14 @@ class Comp:
                 start_slice = max(0, center_slice - n_slices_around)
                 end_slice = min(combined_mask_data.shape[2], center_slice + n_slices_around + 1)
                 return list(range(start_slice, end_slice))
-            
+
 
     def compare_files(self, matlab_path, python_run, contrast_name, glm1_models, python_mask, z=12):
-    # Load MATLAB beta map for SIN regressor
+        """
+        Compare one Matlab GLM1 beta map with the matching Python contrast map.
+        Prints summary statistics and plots selected z-slices.
+        """
+        # Load MATLAB beta map for SIN regressor
 
         matlab_beta_sin_img = nib.load(matlab_path)
         matlab_beta_sin_data = np.squeeze(matlab_beta_sin_img.get_fdata())
@@ -158,12 +163,15 @@ class Comp:
                 print(matlab_beta_sin_data.shape)
                 # diff_map_data[~mask_data] = np.nan # Optional: NaN out outside mask
 
-                # Choose a representative slice (if no z ist specified picks middle axial slice)
+                # Choose representative slices for visual comparison.
                 slices_to_plot = z
                 for slice_idx in slices_to_plot:
                     print(slice_idx)
                     plt.figure(figsize=(18, 6))
-                    plt.suptitle(f"{contrast_name} Beta Comparison (Run {python_run}, Slice Z={slice_idx})", fontsize=16)
+                    plt.suptitle(
+                        f"{contrast_name} Beta Comparison (Run {python_run}, Slice Z={slice_idx})",
+                        fontsize=16
+                    )
 
                     plt.subplot(1, 3, 1)
                     plt.imshow(matlab_beta_sin_data[:, :, slice_idx].T, cmap='cold_hot', aspect='auto', origin='lower')
@@ -188,6 +196,10 @@ class Comp:
 
 
     def compare_amp(self, matlab_amplitude_file, python_amplitude_file, run, z=12):
+        """
+        Compare Matlab and Python voxelwise amplitude maps.
+        Prints summary statistics, correlation, and selected slice plots.
+        """
         matlab_img = nib.load(matlab_amplitude_file)
         print(matlab_img.shape)
         matlab_data = np.squeeze(matlab_img.get_fdata())
@@ -250,7 +262,7 @@ class Comp:
 
     def circ_diff_deg(self, a, b):
         """
-        Minimal absolute angular difference in degrees (circular)
+        Return the minimal absolute circular difference between angles in degrees.
         """
         diff = np.abs(a - b) % 360
         return np.where(diff > 180, 360 - diff, diff)
@@ -258,6 +270,10 @@ class Comp:
 
 
     def compare_ori(self, matlab_orientation_file, python_orientation_file, run, z=12):
+        """
+        Compare Matlab and Python voxelwise orientation maps.
+        Prints circular statistics and plots selected slices plus histograms.
+        """
 
         print("Comparing Python GLM1 Orientation with MATLAB")
         matlab_img = nib.load(matlab_orientation_file)
@@ -275,13 +291,13 @@ class Comp:
 
             # --- Valid voxel mask ---
             valid_mask_ori = ~(np.isnan(matlab_data) | np.isnan(python_data))
-            
+
             # --- Orientation stats ---
             matlab_data_f = matlab_data[valid_mask_ori]
             python_data_f = python_data[valid_mask_ori]
             print(f"Matlab data shape: {matlab_data.shape}")
             print(f"Python data shape: {python_data.shape}")
-            
+
             matlab_stats = {
                 'min': np.nanmin(matlab_data), 'max': np.nanmax(matlab_data),
                 'mean': np.nanmean(matlab_data), 'std': np.nanstd(matlab_data)
@@ -342,8 +358,18 @@ class Comp:
         plt.figure(figsize=(10, 4))
         plt.hist(matlab_data_f, bins=36, alpha=0.6, label='MATLAB')
         plt.hist(python_data_f, bins=36, alpha=0.6, label='Python')
-        plt.axvline(np.nanmean(matlab_data), color='blue', linestyle='--', label=f'MAT mean: {np.nanmean(matlab_data_f):.1f}°')
-        plt.axvline(np.nanmean(python_data), color='orange', linestyle='--', label=f'PY mean: {np.nanmean(python_data_f):.1f}°')
+        plt.axvline(
+            np.nanmean(matlab_data),
+            color='blue',
+            linestyle='--',
+            label=f'MAT mean: {np.nanmean(matlab_data_f):.1f}°'
+        )
+        plt.axvline(
+            np.nanmean(python_data),
+            color='orange',
+            linestyle='--',
+            label=f'PY mean: {np.nanmean(python_data_f):.1f}°'
+        )
         plt.xlabel("Grid Orientation (°)")
         plt.ylabel("Voxel Count")
         plt.title(f"Grid Orientation Distribution ")
@@ -351,12 +377,12 @@ class Comp:
         plt.tight_layout()
         plt.show()
 
-    def compare_beta_space(self, matlab_cos_path, matlab_sin_path, 
-                           python_cos_img, python_sin_img, 
+    def compare_beta_space(self, matlab_cos_path, matlab_sin_path,
+                           python_cos_img, python_sin_img,
                            roi_mask_path, title="Beta Space Comparison"):
         """
-        Compares MATLAB and Python GLM results in "beta space" for a given ROI.
-
+        Compare Matlab and Python GLM results in beta space for one ROI.
+        Plots voxelwise and mean sine/cosine beta vectors.
         """
         print(f"\n--- Generating Beta Space Comparison for: {title} ---")
 
@@ -379,7 +405,7 @@ class Comp:
         # Calculate angle (in degrees) using arctan2 for quadrant correctness
         angle_matlab = np.rad2deg(np.arctan2(mean_matlab_sin, mean_matlab_cos))
         angle_python = np.rad2deg(np.arctan2(mean_python_sin, mean_python_cos))
-        
+
         # Calculate magnitude (vector length)
         mag_matlab = np.sqrt(mean_matlab_cos**2 + mean_matlab_sin**2)
         mag_python = np.sqrt(mean_python_cos**2 + mean_python_sin**2)
@@ -391,14 +417,14 @@ class Comp:
         print(f"{'Python':<10} {angle_python:<15.2f} {mag_python:<15.4f}")
         print("-" * 40)
         print(f"Angle Difference: {self.circ_diff_deg(angle_matlab, angle_python):.2f}°")
-        
+
         # 4. Create the Visualization
         plt.figure(figsize=(8, 8))
-        
+
         # Scatter plots for individual voxels
         plt.scatter(matlab_betas_cos, matlab_betas_sin, alpha=0.4, color='crimson', label='MATLAB Voxels')
         plt.scatter(python_betas_cos, python_betas_sin, alpha=0.4, color='royalblue', label='Python Voxels')
-        
+
         # Plot the mean vectors as arrows
         plt.annotate('', xy=(mean_matlab_cos, mean_matlab_sin), xytext=(0, 0),
                      arrowprops=dict(facecolor='crimson', shrink=0, width=2, headwidth=10))
@@ -425,34 +451,35 @@ class Comp:
     def compare_glm2_maps(self, matlab_map_path, python_map_obj, mask_img_obj,
                         map_type_name="GLM2 Contrast", comparison_label="GLM2"):
         """
-        Compares MATLAB and Python output maps for GLM2.
+        Compare Matlab and Python GLM2 maps inside a shared mask.
+        Prints summary statistics and plots a representative axial slice.
         """
         # Load MATLAB contrast map
         matlab_img = nib.load(matlab_map_path)
         matlab_data = np.squeeze(matlab_img.get_fdata(dtype=np.float32))
         if matlab_data.ndim > 3:
             matlab_data = matlab_data[..., 0]
-        
+
         # Load Python contrast map data
         python_data = np.squeeze(python_map_obj.get_fdata(dtype=np.float32))
         if python_data.ndim > 3:
             python_data = python_data[..., 0]
         # Replace exact zero values with NaN for fair comparison
         python_data[python_data == 0] = np.nan
-        
+
         # Check if shapes match
         if matlab_data.shape != python_data.shape:
             print(f"Warning: Shape mismatch! MATLAB: {matlab_data.shape}, Python: {python_data.shape}")
         else:
             print("Shapes match.")
-        
+
         # Load the mask and apply it
         mask_data = np.squeeze(mask_img_obj.get_fdata()).astype(bool)
-        
+
         # Apply the mask
         matlab_masked = matlab_data[mask_data]
         python_masked = python_data[mask_data]
-        
+
         # Compute statistics on common finite values
         finite_mask = np.isfinite(matlab_masked) & np.isfinite(python_masked)
         matlab_common = matlab_masked[finite_mask]
@@ -468,29 +495,29 @@ class Comp:
                 print(f"{stat.capitalize()}: MATLAB = {m_val:.6f}, Python = {p_val:.6f}, Diff = {diff:.6f}")
             corr = np.corrcoef(matlab_common, python_common)[0, 1]
             print(f"Pearson Correlation: {corr:.6f}")
-        
+
         # Plotting a representative axial slice (middle slice of z-dimension)
         slice_idx = matlab_data.shape[2] // 2
         diff_map = python_data - matlab_data
-        
+
         plt.figure(figsize=(18, 6))
         plt.suptitle(f"{comparison_label}: {map_type_name} Comparison (Slice {slice_idx})", fontsize=16)
-        
+
         plt.subplot(1, 3, 1)
         plt.imshow(matlab_data[:, :, slice_idx].T, cmap='cold_hot', aspect='auto', origin='lower')
         plt.title("MATLAB Contrast")
         plt.colorbar()
-        
+
         plt.subplot(1, 3, 2)
         plt.imshow(python_data[:, :, slice_idx].T, cmap='cold_hot', aspect='auto', origin='lower')
         plt.title("Python Contrast")
         plt.colorbar()
-        
+
         plt.subplot(1, 3, 3)
         plt.imshow(diff_map[:, :, slice_idx].T, cmap='coolwarm', aspect='auto', origin='lower')
         plt.title("Difference (Python - MATLAB)")
         plt.colorbar()
-        
+
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         plt.show()
 
@@ -498,39 +525,30 @@ class Comp:
     def compare_glm2_maps_in_roi(self, matlab_map_path, python_map_obj, roi_mask_obj,
                                  map_type_name="GLM2 Contrast", comparison_label="GLM2"):
         """
-        Compares GLM2 contrast maps and visualizes them correctly within an ROI.
-        
-        Args:
-            matlab_map_path (str): Path to MATLAB GLM2 contrast map.
-            python_map_obj (Nifti1Image): Python GLM2 contrast map object.
-            roi_mask_obj (Nifti1Image): The ANATOMICAL ROI MASK for this analysis.
-            ...
+        Compare GLM2 contrast maps within an anatomical ROI mask.
+        Prints ROI statistics and plots masked orthogonal views.
         """
         matlab_img = nib.load(matlab_map_path)
         matlab_data = np.squeeze(matlab_img.get_fdata(dtype=np.float32))
         if matlab_data.ndim > 3:
             matlab_data = matlab_data[..., 0]
-        
+
         # Load Python contrast map data
         python_data = np.squeeze(python_map_obj.get_fdata(dtype=np.float32))
         if python_data.ndim > 3:
             python_data = python_data[..., 0]
-        
-        # NOTE: I'm removing the replacement of zeros with NaN here.
-        # It's better to do that on the masked data for stats, but not
-        # on the original data for visualization unless intended.
-        
+
         # Check if shapes match
         if matlab_data.shape != python_data.shape:
             print(f"Warning: Shape mismatch! MATLAB: {matlab_data.shape}, Python: {python_data.shape}")
         else:
             print("Shapes match.")
-        
+
         # Load the mask and apply it for statistics
         mask_data = np.squeeze(roi_mask_obj.get_fdata()).astype(bool)
         matlab_masked = matlab_data[mask_data]
         python_masked = python_data[mask_data]
-        
+
         # Make a copy for stats and replace 0 with NaN for fair comparison
         python_masked_for_stats = python_masked.copy()
         python_masked_for_stats[python_masked_for_stats == 0] = np.nan
@@ -538,7 +556,7 @@ class Comp:
         finite_mask = np.isfinite(matlab_masked) & np.isfinite(python_masked_for_stats)
         matlab_common = matlab_masked[finite_mask]
         python_common = python_masked_for_stats[finite_mask]
-        
+
         if matlab_common.size < 2:
             print("Not enough finite voxels in common for statistics.")
         else:
@@ -554,17 +572,16 @@ class Comp:
         # --- 2. IMPROVED VISUALIZATION ---
         print("Visualizing GLM2 contrast within the provided ROI...")
 
-        # Find a good coordinate to display by finding the center of mass of the ROI
         try:
             coords = plotting.find_xyz_cut_coords(roi_mask_obj)
         except (ValueError, IndexError): # Catch potential errors
             print("Could not find center of mass for ROI, using default coordinates.")
             coords = None
-        
+
 
         python_display_data = np.zeros_like(python_data)
         python_display_data[mask_data] = python_data[mask_data]
-        
+
         matlab_display_data = np.zeros_like(matlab_data)
         matlab_display_data[mask_data] = matlab_data[mask_data]
 
@@ -574,7 +591,7 @@ class Comp:
         plotting.plot_stat_map(
             # Pass the NEW, MASKED Nifti object to the plotter
             stat_map_img=python_map_in_roi,
-            bg_img=None, 
+            bg_img=None,
             display_mode='ortho',
             cut_coords=coords,
             title=f"Python: {map_type_name} within ROI",
@@ -598,7 +615,7 @@ class Comp:
 
     def compare_design_glm1(self, spm_csv_path, run_idx, glm1_models):
         """
-        Compares a GLM1 Nilearn design matrix against an SPM/Matlab design matrix CSV.
+        Compare a GLM1 Nilearn design matrix against an SPM/Matlab design matrix CSV.
         Plots regressors side-by-side and reports Pearson correlation, mean diff, R².
         """
         spm_dm_full = pd.read_csv(spm_csv_path)
@@ -668,9 +685,8 @@ class Comp:
         nilearn_motion_col='X'
     ):
         """
-        Compares a GLM2 Nilearn design matrix against an SPM/Matlab design matrix CSV.
+        Compare a GLM2 Nilearn design matrix against an SPM/Matlab design matrix CSV.
         Supports 'pmod' and 'aligned_misaligned' methods.
-        Returns a summary DataFrame.
         """
         print(f"--- Diagnostic Analysis for Run {run_number} (Method: {method}) ---")
         nilearn_dm = nilearn_dms[run_number - 1]
@@ -744,7 +760,7 @@ class Comp:
 
     def parse_and_print_metrics_file(self, filepath):
         """
-        Parses and prints the semicolon-separated GridCAT metrics output file.
+        Parse and print the semicolon-separated GridCAT metrics output file.
         """
         try:
             with open(filepath, 'r') as f:
