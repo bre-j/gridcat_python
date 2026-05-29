@@ -98,13 +98,13 @@ class Comp:
         python_beta_sin_data[python_beta_sin_data == 0.0] = np.nan
         print(f"Python beta map for '{contrast_name}' Run {python_run} computed. Shape: {python_beta_sin_data.shape}")
 
-        # --- 2. Basic Checks ---
+        # Basic Checks
         if matlab_beta_sin_data.shape != python_beta_sin_data.shape:
             print(f"Error: Shape mismatch! MATLAB: {matlab_beta_sin_data.shape}, Python: {python_beta_sin_data.shape}")
         else:
             print("Shapes match.")
 
-            # --- 3. Masking
+            # Masking
             mask_img_obj = python_mask # From your earlier code
             mask_data = mask_img_obj.get_fdata().astype(bool)
 
@@ -569,7 +569,7 @@ class Comp:
             corr = np.corrcoef(matlab_common, python_common)[0, 1]
             print(f"Pearson Correlation: {corr:.6f}")
 
-        # --- 2. IMPROVED VISUALIZATION ---
+        # Create the plot
         print("Visualizing GLM2 contrast within the provided ROI...")
 
         try:
