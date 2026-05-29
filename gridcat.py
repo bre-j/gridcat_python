@@ -302,12 +302,12 @@ class gridcat:
                 })
 
         if not prepared_events_list:
-            # print("pmod_glm1: No events were processed.")
+            print("pmod_glm1: No events were processed.")
             return pd.DataFrame(columns=["onset", "duration", "trial_type", "modulation"])
 
         nilearn_events_df = pd.DataFrame(prepared_events_list)
         nilearn_events_df = nilearn_events_df.sort_values(by="onset").reset_index(drop=True)
-        # print(f"  pmod_glm1 generated {len(nilearn_events_df)} event entries for Nilearn.")
+        print(f"  pmod_glm1 generated {len(nilearn_events_df)} event entries for Nilearn.")
         return nilearn_events_df[["onset", "duration", "trial_type", "modulation"]]
 
     def setup_first_level_model(self, t_r, high_pass_period, smoothing_fwhm, slice_time_ref, mask):
@@ -336,7 +336,7 @@ class gridcat:
         Returns the Nilearn event table and fitted FirstLevelModel.
         """
         print(f"Running GLM1 for Run {run_number}")
-        # 1. Read data
+        # Read data
         event_df = self.read_event_table_to_df(event_table_file)
         add_reg_df = self.read_additional_regressors_to_df(regressor_file)
 
@@ -355,7 +355,7 @@ class gridcat:
         #Prepare events for Nilearn using pmod_glm1
         event_df_nilearn = self.pmod_glm1(event_df, xFold)
 
-        # 4. Setup and Fit Model
+        # Setup and Fit Model
         # Using mask_path=None for automatic masking within FirstLevelModel
         model = self.setup_first_level_model(tr, high_pass_period, smoothing_fwhm, slice_time_ref, mask)
         print(f"Fitting FirstLevelModel for run {run_number}")
@@ -501,6 +501,7 @@ class gridcat:
             print("debug")
             return None # Cannot proceed without ROI mask
 
+        # Averaged orientation
         if average_across_runs:
             avg_ori_file = os.path.join(grid_ori_subdir, f'voxelwiseGridOri_{grid_event_name}_allRunsAvg_deg.nii')
             avg_amp_file = os.path.join(grid_ori_subdir, f'voxelwiseAmplitude_{grid_event_name}_allRunsAvg.nii')
@@ -575,11 +576,11 @@ class gridcat:
                 print(f"  Calculated ROI Mean Orientation (Avg Runs): {np.rad2deg(mean_ori_rad_result):.3f} deg")
                 return mean_ori_rad_result
 
+        # Per-run orientations
         else:
 
             results = {}
 
-            # --- Per Run Logic
             print("  Calculating mean orientation per run...")
             results = {}
             # Determine which runs have data available
