@@ -1,6 +1,6 @@
 # GridCAT Python
 
-This repository contains a work-in-progress Python translation and exploration of the MATLAB GridCAT Toolbox for fMRI grid-code analysis. 
+This repository contains a work-in-progress Python translation and exploration of the MATLAB GridCAT Toolbox for fMRI grid-code analysis by Jannis Breßgott and Florence Dejardin. 
 
 The current repository contains two notebooks:
 
